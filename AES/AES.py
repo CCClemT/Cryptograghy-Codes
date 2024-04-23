@@ -4,23 +4,38 @@ def str2hex(strs):
         data.append(hex(i)[2:].zfill(2))
     return data
 
+def dec2hex(a:int):
+    return hex(a)[2:].zfill(2)
+
+def xor_hex(a:str,b:str):
+    return int(a,16) ^ int(b,16)
 
 inputs = 'aaaaaaaaaaaaaaaa'
-
-
-def RCON(x:int):   #轮常数
-    res = hex(0x01)[2:].zfill(2)
-    for i in range(2,x + 1):
-        res = xtime(res)
-    return res
 
 def xtime(res:str):
     res = int(str(res),16) << 1
     if res > 255:
-        res = int(hex(res)[3:],16) ^ 0x1b
+        res = xor_hex(hex(res)[3:],'1b')
     res = hex(res)[2:].zfill(2)
     return res
-
+                                                                      
+def GF2_8(factor1:str,factor2:str):    #伽罗瓦域GF(2^8)上乘法  factor1 * factor2
+    max_f = []
+    cnt1 = int(factor2,16)     #提取所有最大因数,提取出分配律后所有的加数
+    while cnt1 >= 1: 
+        temp1 = '01'
+        cnt2 = cnt1
+        temp2 = factor1
+        while cnt2 > 1:
+            temp1 = xtime(temp1)
+            temp2 = xtime(temp2)
+            cnt2 = cnt2 - int(temp1,16) 
+        max_f.append(temp2)
+        cnt1 = cnt1 - int(temp1,16)
+    res = 0        
+    for i in max_f:
+        res ^= int(i,16)
+    return hex(res)[2:].zfill(2)
 
 Sbox = [[0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76],
     [0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0],
@@ -39,18 +54,34 @@ Sbox = [[0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B,
     [0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF],
     [0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16]]
 
+Shift_Row = [0,1,2,3,
+             5,6,7,4,
+             10,11,8,9,
+             15,12,13,14]
+
 class Key:
-    def T(datas:list):              ########还需轮常量
+
+    def initRCON():   #轮常数
+        RCON = ['00','01']
+        res = hex(0x01)[2:].zfill(2)
+        for i in range(2,11):
+            res = xtime(res)
+            RCON.append(res)
+        return RCON
+    RCON = initRCON()
+
+    def T(datas:list,j:int)->list:              #轮常量j
         datas.append(datas.pop(0))  #1.左移一位
         for i in range(len(datas)): #2.S盒替换
             x = (int(datas[i][0],16))
             y = (int(datas[i][1],16))
             datas[i] = hex(Sbox[x][y])[2:].zfill(2)
-        
-        print(datas)
+        RCON = Key.RCON
+        temp = xor_hex(datas[0],RCON[j]) #轮常量异或
+        datas[0] = hex(temp)[2:].zfill(2)   
+        return(datas)
 
-
-    def get_keys(datas:list):
+    def getKeys(datas:list):
         w = []
 
         for i in range(0,len(datas),4):
@@ -58,14 +89,50 @@ class Key:
             for j in range(i,i+4):
                 temp.append(datas[j])
             w.append(temp)
-        return(temp)
-    ''' for i in range(4,44):
+
+        for i in range(4,44):#44
+            
             if i % 4 !=0:
                 temp = []
                 for j in range(0,4):
-                    temp.append(w[i-4][j] ^ w[i-1][j])
-                w.append(temp)'''
-#            else:
-Key.T(['AC','C1','07','BD'])
+                    temp.append(dec2hex(xor_hex(w[i-4][j],w[i-1][j])))
+                w.append(temp)
+            else:
+                temp = []
+                t = [] 
+                t.extend(w[i-1])
+                t = Key.T(t,1)###轮常量
+                for j in range(0,4):
+                    temp.append(dec2hex(xor_hex(w[i-4][j],t[j])))
+                w.append(temp)
+        return(w)
+
+class PlainTest:
+    def subBytes(datas:list):
+        for i in range(len(datas)): # 1.S盒替换
+            x = (int(datas[i][0],16))
+            y = (int(datas[i][1],16))
+            datas[i] = hex(Sbox[x][y])[2:].zfill(2)
+        return datas
 
 
+    def shiftRows(datas:list):      # 2.行位移
+        temp = []
+        for i in Shift_Row:
+            temp.append(datas[i])  #左移
+        return temp
+
+    def mixColumns(datas:list):     # 3.列混合
+        
+
+
+
+        return
+
+print(Key.getKeys(['3C', 'A1', '0B', '21', 
+                           '57', 'F0', '19', '16', 
+                           '90', '2E', '13', '80', 
+                           'AC', 'C1', '07', 'BD']))
+
+
+#print(PlainTest.subBytes(str2hex(inputs)))
