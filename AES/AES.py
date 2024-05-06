@@ -54,6 +54,17 @@ def GF2_8(factor1:str,factor2:str):    #伽罗瓦域GF(2^8)上乘法  factor1 * 
         res ^= int(i,16)
     return hex(res)[2:].zfill(2)
 
+def getNk(keys:list):
+    if len(keys) == 16:#128bit密钥
+        return 4 
+    elif len(keys) == 24:#192bit密钥
+        return 6
+    elif len(keys) == 32:#256bit密钥
+        return 8
+    else:
+        print("密钥长度错误\n")
+        return 0
+    
 
 Sbox =  [[0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76],
          [0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0],
@@ -71,9 +82,6 @@ Sbox =  [[0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b
          [0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e],
          [0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf],
          [0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16]]
-
-
-
 inverse_Sbox = [
     [0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb],
 	[0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb],
@@ -102,17 +110,17 @@ inverse_Shift_Row = [0,13,10,7,
                      12,9,6,3]
 
 class Key:
-    def __init__(self):
-        pass
+    def __init__(self,nk:int):
+        self.nk = nk
+        self.RCON = self.initRCON()
 
-    def initRCON():   #轮常数
+    def initRCON(self):   #轮常数
         RCON = ['00','01']
         res = hex(0x01)[2:].zfill(2)
-        for i in range(2,11):
+        for i in range(2,self.nk + 7):
             res = xtime(res)
             RCON.append(res)
         return RCON
-    RCON = initRCON()
 
     def T(self,datas:list,j:int)->list:              #轮常量j
         datas.append(datas.pop(0))  #1.左移一位
@@ -127,19 +135,38 @@ class Key:
 
     def getKeys(self,datas:list):
         w = []
-
         for i in range(0,len(datas),4):
             temp = []
             for j in range(i,i+4):
                 temp.append(datas[j])
             w.append(temp)
+
+        if self.nk == 4:
+            end = 44
+        elif self.nk == 6:
+            end = 52
+        elif self.nk == 8:
+            end = 60
+
         cnt = 1
-        for i in range(4,44):#44
-            
-            if i % 4 !=0:
+        for i in range(self.nk,end):
+            if self.nk == 8 and i % self.nk != 0 and i % 4 == 0:
+
+                temp = []
+                t = []
+                t.extend(w[i-1])
+                for j in range(len(t)): #字节代换
+                    x = (int(t[j][0],16))
+                    y = (int(t[j][1],16))
+                    t[j] = hex(Sbox[x][y])[2:].zfill(2)
+
+                for j in range(0,4):
+                    temp.append(dec2hex(xor_hex2int(w[i-self.nk][j],t[j])))
+                w.append(temp)
+            elif i % self.nk != 0:
                 temp = []
                 for j in range(0,4):
-                    temp.append(dec2hex(xor_hex2int(w[i-4][j],w[i-1][j])))
+                    temp.append(dec2hex(xor_hex2int(w[i-self.nk][j],w[i-1][j])))
                 w.append(temp)
             else:
                 temp = []
@@ -148,7 +175,7 @@ class Key:
                 t = self.T(t,cnt)
                 cnt += 1  
                 for j in range(0,4):
-                    temp.append(dec2hex(xor_hex2int(w[i-4][j],t[j])))
+                    temp.append(dec2hex(xor_hex2int(w[i-self.nk][j],t[j])))
                 w.append(temp)
         return(w)
 
@@ -207,9 +234,9 @@ class Test:
                 x += 1
         return temp
 
-    def turn(self,datas:list,W:list):
+    def turn(self,datas:list,W:list,Nk:int):
         i = 1
-        while i < 10:
+        while i < Nk + 6:
             datas = self.subBytes(datas)
             datas = self.shiftRows(datas)
             datas = self.mixColumns(datas)
@@ -220,8 +247,8 @@ class Test:
         datas = self.addRoundKey(datas,W,i)
         return datas
 
-    def inverse_turn(self,datas:list,W:list):
-        i = 9
+    def inverse_turn(self,datas:list,W:list,Nk:int):
+        i = Nk + 5
         while i > 0:
             datas = self.inverse_shiftRows(datas)
             datas = self.inverse_subBytes(datas)
@@ -234,10 +261,11 @@ class Test:
         return datas      
 
 def encode():
-    temp = str2hex(input("输入明文\n"))
-    keys = str2hex(input("输入16字节密钥\n"))
+    temp = str2hex(input("输入单组明文\n"))
+    keys = str2hex(input("输入16\\24\\32字节密钥\n"))
+    Nk = getNk(keys)
     plaintest = Test()
-    key = Key()
+    key = Key(Nk)
     keys = key.getKeys(keys)
     x = 0   #第一次轮密钥加
     datas = []
@@ -245,23 +273,31 @@ def encode():
         for j in keys[i]:
             datas.append(xor_hex2hex(temp[x],j))
             x += 1
-    print("密文为:\n"+hex2str(plaintest.turn(datas,keys)))
+    print("密文为:\n"+hex2str(plaintest.turn(datas,keys,Nk)))
 
 def decode():
-    temp = hex2hex("5188c6474b228cbdd242e9125ebe1d53") #(input("输入密文\n"))
-
-    keys = str2hex("aaaaaaaaaaaaaaaa")#str2hex(input("输入16字节密钥\n"))
+    temp = hex2hex(input("输入单组密文\n"))
+    keys = str2hex(input("输入16\\24\\32字节密钥\n"))
+    Nk = getNk(keys)
     plaintest = Test()
-    key = Key()
+    key = Key(Nk)
     keys = key.getKeys(keys)
     x = 0   #第一次轮密钥加
     datas = []
-    for i in range(40,44):
+    for i in range(len(keys)-4,len(keys)):
         for j in keys[i]:
             datas.append(xor_hex2hex(temp[x],j))
             x += 1
+    print("明文为:\n",(hex2chr(plaintest.inverse_turn(datas,keys,Nk))))
 
-    print("明文为:\n",(hex2chr(plaintest.inverse_turn(datas,keys))))
-
-decode()
-#encode()
+if __name__ == '__main__':
+    while True:
+        mode = input("选择模式:\n1.加密  2.解密  3.退出\n")
+        if mode == '1':
+            encode()
+        elif mode == '2':
+            decode()
+        elif mode == '3':
+            exit()
+        else:
+            print("无此操作") 
